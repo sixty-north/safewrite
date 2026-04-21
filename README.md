@@ -14,7 +14,7 @@ structured documents reliably:
   granularity.
 
 The core is pure Python with zero runtime dependencies. Formats are
-added via plugins. XML ships today; JSON / YAML / AST are on the
+added via plugins. XML and JSON ship today; YAML / AST are on the
 roadmap.
 
 ## Installation
@@ -22,6 +22,7 @@ roadmap.
 ```bash
 pip install wellformed              # core only
 pip install wellformed[xml]         # with XML plugin (installs lxml)
+pip install wellformed[json]        # with JSON plugin (installs jsonschema)
 ```
 
 Requires Python 3.11 or newer.
@@ -75,6 +76,72 @@ the mutation is already valid, no LLM call is made. If the mutation
 produces invalid content and the repair succeeds, the repaired content
 is written. If repair fails, `MutationFailedError` is raised and your
 code can roll back via the checkpoint.
+
+## The same, in JSON
+
+The JSON plugin mirrors the XML one: same three hooks, same
+`load` / `apply` / `checkpoint` flow. JSON parsing uses the stdlib
+`json` module; schema validation uses
+[jsonschema](https://python-jsonschema.readthedocs.io/) against the
+2020-12 draft.
+
+Given a minimal JSON Schema on disk at `schemas/note.schema.json`:
+
+```json
+{
+  "type": "object",
+  "required": ["type", "lines"],
+  "properties": {
+    "type": {"const": "note"},
+    "lines": {"type": "array", "items": {"type": "string"}}
+  }
+}
+```
+
+```python
+import json
+from pathlib import Path
+from wellformed import DocumentMutation, MutationFailedError
+from wellformed.json import JSONValidatedDocument, make_json_schema_validator
+
+SCHEMA = make_json_schema_validator(Path("schemas/note.schema.json"))
+
+
+class Note(JSONValidatedDocument):
+    @classmethod
+    def _validate_schema(cls, content):
+        return SCHEMA(content)
+
+    @classmethod
+    def _get_document_type(cls):
+        return "note"
+
+    @classmethod
+    async def _repair(cls, content, errors, document_type):
+        # Call your LLM of choice here. See "BYO LLM" below.
+        ...
+
+
+class AppendLine(DocumentMutation):
+    async def execute(self, content, parsed):
+        parsed["lines"].append("added by the agent")
+        return json.dumps(parsed)
+
+
+doc = await Note.load(Path("note.json"))
+checkpoint = doc.checkpoint()
+try:
+    new_doc = await doc.apply(AppendLine(name="append"))
+    new_doc.save()
+    checkpoint.discard()
+except MutationFailedError:
+    checkpoint.restore()
+    raise
+```
+
+The `parsed` argument passed to `execute` is the `json.loads` output
+— a `dict` or `list`. Mutate it in place and return the re-serialized
+string, exactly like the XML example returns `etree.tostring(parsed)`.
 
 ## Core concepts
 
@@ -438,16 +505,16 @@ Typical use cases:
 
 ## Plugins
 
-| Plugin               | Status  | Install                     |
-|----------------------|---------|-----------------------------|
-| XML (lxml)           | shipped | `pip install wellformed[xml]` |
-| JSON / JSON Schema   | planned | —                           |
-| YAML                 | planned | —                           |
-| Python AST           | planned | —                           |
+| Plugin               | Status  | Install                        |
+|----------------------|---------|--------------------------------|
+| XML (lxml)           | shipped | `pip install wellformed[xml]`  |
+| JSON / JSON Schema   | shipped | `pip install wellformed[json]` |
+| YAML                 | planned | —                              |
+| Python AST           | planned | —                              |
 
 Writing a plugin is four methods: `_parse`, `_validate_schema`,
 `_get_document_type`, `_repair`. See `src/wellformed/xml/document.py`
-for the reference implementation.
+or `src/wellformed/json/document.py` for reference implementations.
 
 ## Releasing
 

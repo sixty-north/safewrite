@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
 authors = [{ name = "Sixty North", email = "systems+wellformed@sixty-north.com" }]
-keywords = ["llm", "agent", "validation", "repair", "atomic", "document", "xml"]
+keywords = ["llm", "agent", "validation", "repair", "atomic", "document", "xml", "json"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -23,6 +23,7 @@ dependencies = []
 
 [project.optional-dependencies]
 xml = ["lxml>=5.0"]
+json = ["jsonschema>=4.18"]
 
 [dependency-groups]
 test = ["pytest>=8", "pytest-asyncio>=0.24", "hypothesis>=6"]
