@@ -387,6 +387,55 @@ Interesting consequence: you can cascade. Try the cheap deterministic
 fix first, only fall back to an LLM call if it doesn't resolve the
 errors. `FixingLoop` gives you the attempt count so you can key on it.
 
+## Without a schema: well-formedness alone
+
+`_validate_schema` is a hook, not a requirement. Returning `[]` turns
+the schema check into a no-op, so the only invariant the class still
+enforces is that content parses successfully. The always-valid
+invariant narrows from "well-formed **and** schema-valid" to
+"well-formed" — which is all some formats (or some phases of a
+project) ever need.
+
+```python
+from wellformed.xml import XMLValidatedDocument
+
+
+class FreeFormXML(XMLValidatedDocument):
+    @classmethod
+    def _validate_schema(cls, content):
+        return []  # no schema check; parsing is the only invariant
+
+    @classmethod
+    def _get_document_type(cls):
+        return "free-form-xml"
+
+    @classmethod
+    async def _repair(cls, content, errors, document_type):
+        # `errors` will only ever contain XML parse errors — mismatched
+        # tags, unclosed entities, stray `&`, and so on. Repair
+        # strategies here are syntactic, not semantic.
+        ...
+```
+
+The trade-off: repair can fix a missing `</tag>`, but it has no way to
+tell whether a structurally-valid document is semantically correct —
+there is no schema to compare against. `Checkpoint` and `FixingLoop`
+behave identically to the schema-backed case.
+
+Typical use cases:
+
+- **Formats with no standard schema.** User-authored XML notes,
+  snippets, or bespoke markup that varies too much to pin down.
+- **Schema not yet available.** Prototype phase, or a third-party
+  format where the schema is missing, incomplete, or out of date.
+- **Syntactic integrity is the contract.** Config files where
+  "well-formed XML" is all downstream code relies on; semantic checks
+  live elsewhere.
+- **Driving `FixingLoop` directly.** Skip the `ValidatedDocument`
+  wrapper entirely and pass `make_xml_wellformed_validator()` (from
+  `wellformed.xml`) to `FixingLoop` to get retry-on-parse-error
+  behaviour for any string content.
+
 ## Plugins
 
 | Plugin               | Status  | Install                     |
