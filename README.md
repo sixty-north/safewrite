@@ -94,7 +94,257 @@ back on failure. Three granularities:
 - `MultiFileCheckpoint` — several files, restored in LIFO order.
 - `DirectoryCheckpoint` — whole directory copied via `shutil`.
 
-## BYO LLM: the repair function is a protocol
+## An extended example: iterative repair and rollback
+
+The quickstart is deliberately minimal. Here's a fuller example that
+shows two behaviours in action:
+
+1. **The fixing loop iterates.** A single repair attempt often fixes
+   one error but leaves another — or introduces a fresh defect. The
+   loop retries up to `max_fix_attempts` times, passing the latest
+   errors to `_repair` on each round.
+2. **Checkpoints roll back to the last known-good state** when a
+   mutation can't be repaired. Successful edits are preserved; only
+   the failing one is reverted.
+
+The document is a small XML todo list. Each `<task>` has a required
+`priority` attribute from `{low, medium, high}` and a `<title>` child.
+We run two mutations against it: one produces an out-of-enum priority
+(recoverable; demonstrates iterative repair) and one strips every
+title (unrecoverable; demonstrates rollback).
+
+Assume two files on disk alongside the script.
+
+`todos.xsd` — the schema:
+
+```xml
+<?xml version="1.0"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
+  <xs:element name="todos">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="task" minOccurs="0" maxOccurs="unbounded">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="title" type="xs:string"/>
+            </xs:sequence>
+            <xs:attribute name="priority" use="required">
+              <xs:simpleType>
+                <xs:restriction base="xs:string">
+                  <xs:enumeration value="low"/>
+                  <xs:enumeration value="medium"/>
+                  <xs:enumeration value="high"/>
+                </xs:restriction>
+              </xs:simpleType>
+            </xs:attribute>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
+```
+
+`todos.xml` — the initial document:
+
+```xml
+<todos>
+  <task priority="high"><title>Ship safewrite v0.1</title></task>
+  <task priority="medium"><title>Write the tutorial</title></task>
+</todos>
+```
+
+And the Python:
+
+```python
+from pathlib import Path
+from lxml import etree
+from safewrite import DocumentMutation, MutationFailedError
+from safewrite.xml import XMLValidatedDocument, make_xml_schema_validator
+
+VALID_PRIORITIES = {"low", "medium", "high"}
+XSD = make_xml_schema_validator(Path("todos.xsd"))
+
+
+class TodoList(XMLValidatedDocument):
+    """A validated XML todo-list document.
+
+    By inheriting from XMLValidatedDocument, we get XML parsing for
+    free (via the `_parse` method provided by the XML plugin). The
+    base class's invariant propagates: once you hold a TodoList
+    instance, its content is guaranteed to be well-formed XML that
+    passes our XSD schema. Invalid content simply cannot be
+    represented by this class — any operation that would produce it
+    either repairs it or raises.
+
+    The three hooks below are everything the library needs from us
+    to extend the XML plugin into a concrete document type.
+    """
+
+    @classmethod
+    def _validate_schema(cls, content):
+        return XSD(content)
+
+    @classmethod
+    def _get_document_type(cls):
+        return "todo-list"
+
+    @classmethod
+    async def _repair(cls, content, errors, document_type):
+        """Naive two-pass repair strategy.
+
+        A production implementation would typically delegate repair
+        to an LLM. To keep this example runnable without network
+        calls, we inspect content directly and apply deterministic
+        fixes instead.
+
+        Note two unused arguments:
+
+        - `errors`: the list of validation messages produced by the
+          last validation pass. An LLM-based repair would weave
+          these into its prompt so the model knows what's wrong. A
+          deterministic repair that inspects content directly — as
+          this one does — can usually infer the needed fix without
+          reading the error list.
+
+        - `document_type`: the string returned by
+          `_get_document_type` above. Useful as a prompt label
+          ("Fix this todo-list: ...") or for dispatching when a
+          single `_repair` function serves several document classes.
+          We only have one document type here, so we don't need it.
+        """
+        try:
+            root = etree.fromstring(content.encode("utf-8"))
+        except etree.XMLSyntaxError:
+            # If the content isn't parseable at all, we can't help
+            # at this layer. Return unchanged; the fixing loop will
+            # report a parse error on the next validation pass.
+            return content
+
+        # --- Strategy A: quarantine invalid priority values. ---
+        # If a `priority` attribute holds a value outside the enum
+        # (e.g. "High" with a capital H), move that value to a
+        # non-schema `prio` attribute and drop `priority`.
+        #
+        # This CLEARS the enum-violation error but INTRODUCES a new
+        # one: the task is now missing its required `priority`
+        # attribute. That's deliberate — the fixing loop will re-run
+        # us with the new errors, and Strategy B will then recover.
+        bad_priority_tasks = [
+            t for t in root.iter("task")
+            if t.get("priority") is not None
+            and t.get("priority") not in VALID_PRIORITIES
+        ]
+        if bad_priority_tasks:
+            for t in bad_priority_tasks:
+                t.set("prio", t.get("priority"))
+                del t.attrib["priority"]
+            return etree.tostring(root, encoding="unicode")
+
+        # --- Strategy B: reinstate priority from the stash. ---
+        # If a task lacks `priority`, look for a stashed value in
+        # `prio`. Lowercase it; if the result is a valid enum
+        # member, use it. Otherwise fall back to "medium". Either
+        # way, drop the temporary `prio` attribute so the document
+        # conforms to the schema again.
+        missing_priority_tasks = [
+            t for t in root.iter("task") if t.get("priority") is None
+        ]
+        if missing_priority_tasks:
+            for t in missing_priority_tasks:
+                stashed = t.get("prio", "")
+                candidate = stashed.lower() if stashed else "medium"
+                if candidate not in VALID_PRIORITIES:
+                    candidate = "medium"
+                t.set("priority", candidate)
+                if "prio" in t.attrib:
+                    del t.attrib["prio"]
+            return etree.tostring(root, encoding="unicode")
+
+        # Neither strategy applies. Returning content unchanged
+        # makes the next validation pass report the same errors, so
+        # the fixing loop will exhaust its attempts and raise.
+        return content
+
+
+# DocumentMutation subclasses describe *what* to change, not *how*
+# to validate or repair. Each mutation's `execute` method is an
+# async callable that receives the current content plus its parsed
+# form (an lxml tree, here) and returns new content.
+#
+# Users write mutations naively — "just do the thing". `apply()`
+# wraps every mutation in the fixing loop: if the produced content
+# fails schema validation, `_repair` runs up to `max_fix_attempts`
+# times before `apply()` raises `MutationFailedError`. This
+# separation keeps each mutation focused on intent; the document
+# class handles "make it valid again" on its behalf.
+
+class BulkReprioritise(DocumentMutation):
+    """Set every task's priority to `value`.
+
+    When `value` is outside the enum (e.g. "High" capitalised), the
+    resulting content fails validation and triggers the fixing loop.
+    """
+
+    def __init__(self, value: str):
+        super().__init__(name=f"bulk-reprioritise-{value}")
+        self.value = value
+
+    async def execute(self, content, parsed):
+        for task in parsed.iter("task"):
+            task.set("priority", self.value)
+        return etree.tostring(parsed, encoding="unicode")
+
+
+class PurgeTitles(DocumentMutation):
+    """Remove every <title>. Unrecoverable: the repair function has
+    no way to invent task titles, so the fixing loop will exhaust
+    its attempts."""
+
+    def __init__(self):
+        super().__init__(name="purge-titles")
+
+    async def execute(self, content, parsed):
+        for title in list(parsed.iter("title")):
+            title.getparent().remove(title)
+        return etree.tostring(parsed, encoding="unicode")
+
+
+async def main():
+    doc = await TodoList.load(Path("todos.xml"))
+
+    # Mutation 1: produces priority="High" (capitalised, not in the
+    # enum). The fixing loop runs two passes:
+    #   Pass 1 — Strategy A stashes each bad value under `prio` and
+    #            removes `priority`. The enum error goes away but a
+    #            "priority attribute required" error appears.
+    #   Pass 2 — Strategy B reads the stashed values, lowercases
+    #            them, reinstates `priority="high"`, drops `prio`.
+    #            The document is now valid.
+    # `apply()` returns a new, valid TodoList. We save it and create
+    # a checkpoint of this known-good state.
+    doc = await doc.apply(BulkReprioritise("High"))
+    doc.save()
+    checkpoint = doc.checkpoint()
+
+    # Mutation 2: removes every <title>. `_repair` has no strategy
+    # for inventing titles, so all three attempts return unchanged
+    # content. `apply()` raises `MutationFailedError`. We restore
+    # the checkpoint; the file on disk is left exactly as it was
+    # after the successful mutation 1.
+    try:
+        await doc.apply(PurgeTitles())
+    except MutationFailedError:
+        checkpoint.restore()
+```
+
+Running the example produces log output that traces both behaviours:
+two fixing-loop iterations for mutation 1 (attempt 1 raises the error
+count from 2 to 4 as Strategy A introduces its temporary defect;
+attempt 2 succeeds), and three failed attempts for mutation 2 before
+`MutationFailedError` fires and the checkpoint restores.
+
+## LLM-agnostic: the repair function is a protocol
 
 `_repair` is just an async callable. That means you can plug in any LLM
 SDK — or no LLM at all. The same `Note` subclass above can be backed by
