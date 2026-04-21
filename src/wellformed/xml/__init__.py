@@ -1,8 +1,8 @@
-"""XML plugin for safewrite.
+"""XML plugin for wellformed.
 
 Requires lxml. Install with::
 
-    pip install safewrite[xml]
+    pip install wellformed[xml]
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 try:
     import lxml  # noqa: F401
 except ImportError as e:
-    raise ImportError("safewrite.xml requires lxml. Install with: pip install safewrite[xml]") from e
+    raise ImportError("wellformed.xml requires lxml. Install with: pip install wellformed[xml]") from e
 
 from .document import XMLValidatedDocument
 from .exceptions import XMLParseError

@@ -1,4 +1,4 @@
-"""Exceptions for safewrite's core document integrity layer."""
+"""Exceptions for wellformed's core document integrity layer."""
 
 from __future__ import annotations
 

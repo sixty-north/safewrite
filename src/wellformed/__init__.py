@@ -1,6 +1,6 @@
-"""safewrite: invariant-preserving document wrappers for agents.
+"""wellformed: invariant-preserving document wrappers for agents.
 
-safewrite provides three composable primitives for agents that modify
+wellformed provides three composable primitives for agents that modify
 persistent structured documents:
 
 - :class:`ValidatedDocument` — a document that is always well-formed
@@ -10,7 +10,7 @@ persistent structured documents:
   directory granularity.
 
 The core is format-agnostic. Install the XML plugin with
-``pip install safewrite[xml]`` and import from :mod:`safewrite.xml`.
+``pip install wellformed[xml]`` and import from :mod:`wellformed.xml`.
 """
 
 from .checkpoint import Checkpoint, DirectoryCheckpoint, MultiFileCheckpoint

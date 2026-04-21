@@ -6,7 +6,7 @@ import pytest
 
 pytest.importorskip("lxml")
 
-from safewrite.xml import (  # noqa: E402
+from wellformed.xml import (  # noqa: E402
     make_relax_ng_validator,
     make_schema_validator,
     make_xml_schema_validator,

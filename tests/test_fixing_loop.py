@@ -1,6 +1,6 @@
 """Tests for FixingLoop."""
 
-from safewrite import FixingLoop, FixingLoopStatus
+from wellformed import FixingLoop, FixingLoopStatus
 
 
 class TestFixingLoop:

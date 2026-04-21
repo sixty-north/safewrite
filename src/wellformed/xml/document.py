@@ -14,7 +14,7 @@ class XMLValidatedDocument(ValidatedDocument[etree._Element]):
     """Base class for always-valid XML documents.
 
     Subclasses override the same three hooks as any
-    :class:`safewrite.ValidatedDocument`:
+    :class:`wellformed.ValidatedDocument`:
 
     - ``_validate_schema`` — return schema error messages
     - ``_get_document_type`` — short identifier

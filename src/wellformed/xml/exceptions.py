@@ -10,7 +10,7 @@ from ..exceptions import DocumentParseError
 class XMLParseError(DocumentParseError):
     """Raised when XML cannot be parsed.
 
-    Inherits from :class:`safewrite.DocumentParseError` so callers can
+    Inherits from :class:`wellformed.DocumentParseError` so callers can
     catch parse failures generically without knowing the document format.
     """
 

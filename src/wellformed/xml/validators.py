@@ -1,7 +1,7 @@
 """XML validation function builders.
 
-These return :class:`safewrite.ValidateFunction` callables that can be
-passed to :class:`safewrite.FixingLoop` or used as the schema-validation
+These return :class:`wellformed.ValidateFunction` callables that can be
+passed to :class:`wellformed.FixingLoop` or used as the schema-validation
 hook inside :class:`XMLValidatedDocument` subclasses.
 """
 

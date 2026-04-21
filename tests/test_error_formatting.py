@@ -1,6 +1,6 @@
 """Tests for error formatting utilities."""
 
-from safewrite import (
+from wellformed import (
     extract_line_column_from_message,
     format_error_with_context,
     format_validation_errors,

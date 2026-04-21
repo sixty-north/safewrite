@@ -2,7 +2,7 @@
 
 import pytest
 
-from safewrite import Checkpoint, CheckpointError
+from wellformed import Checkpoint, CheckpointError
 
 
 class TestCheckpoint:

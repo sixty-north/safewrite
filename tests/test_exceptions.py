@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from safewrite import MutationFailedError
+from wellformed import MutationFailedError
 
 
 class TestExceptions:
@@ -21,7 +21,7 @@ class TestExceptions:
     def test_xml_parse_error(self):
         """XMLParseError lives in the XML plugin."""
         pytest.importorskip("lxml")
-        from safewrite.xml import XMLParseError
+        from wellformed.xml import XMLParseError
 
         error = XMLParseError(
             "Parse failed",

@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from safewrite import (
+from wellformed import (
     DocumentMutation,
     DocumentParseError,
     MutationFailedError,

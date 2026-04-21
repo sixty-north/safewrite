@@ -10,8 +10,8 @@ pytest.importorskip("lxml")
 
 from lxml import etree  # noqa: E402
 
-from safewrite import DocumentMutation, SchemaValidationError  # noqa: E402
-from safewrite.xml import XMLParseError, XMLValidatedDocument  # noqa: E402
+from wellformed import DocumentMutation, SchemaValidationError  # noqa: E402
+from wellformed.xml import XMLParseError, XMLValidatedDocument  # noqa: E402
 
 
 def _has_root_tag(content: str, tag: str) -> list[str]:

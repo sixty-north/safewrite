@@ -1,9 +1,9 @@
-# safewrite
+# wellformed
 
 **Invariant-preserving documents for agents that modify persistent state.**
 
 A chat reply is ephemeral; a config file your agent just rewrote is not.
-`safewrite` gives LLM agents three composable primitives for editing
+`wellformed` gives LLM agents three composable primitives for editing
 structured documents reliably:
 
 - `ValidatedDocument` — a document that is always well-formed and
@@ -20,8 +20,8 @@ roadmap.
 ## Installation
 
 ```bash
-pip install safewrite              # core only
-pip install safewrite[xml]         # with XML plugin (installs lxml)
+pip install wellformed              # core only
+pip install wellformed[xml]         # with XML plugin (installs lxml)
 ```
 
 Requires Python 3.11 or newer.
@@ -30,8 +30,8 @@ Requires Python 3.11 or newer.
 
 ```python
 from pathlib import Path
-from safewrite import DocumentMutation, MutationFailedError
-from safewrite.xml import XMLValidatedDocument, make_xml_schema_validator
+from wellformed import DocumentMutation, MutationFailedError
+from wellformed.xml import XMLValidatedDocument, make_xml_schema_validator
 
 XSD = make_xml_schema_validator(Path("schemas/note.xsd"))
 
@@ -149,7 +149,7 @@ Assume two files on disk alongside the script.
 
 ```xml
 <todos>
-  <task priority="high"><title>Ship safewrite v0.1</title></task>
+  <task priority="high"><title>Ship wellformed v0.1</title></task>
   <task priority="medium"><title>Write the tutorial</title></task>
 </todos>
 ```
@@ -159,8 +159,8 @@ And the Python:
 ```python
 from pathlib import Path
 from lxml import etree
-from safewrite import DocumentMutation, MutationFailedError
-from safewrite.xml import XMLValidatedDocument, make_xml_schema_validator
+from wellformed import DocumentMutation, MutationFailedError
+from wellformed.xml import XMLValidatedDocument, make_xml_schema_validator
 
 VALID_PRIORITIES = {"low", "medium", "high"}
 XSD = make_xml_schema_validator(Path("todos.xsd"))
@@ -391,13 +391,13 @@ errors. `FixingLoop` gives you the attempt count so you can key on it.
 
 | Plugin               | Status  | Install                     |
 |----------------------|---------|-----------------------------|
-| XML (lxml)           | shipped | `pip install safewrite[xml]` |
+| XML (lxml)           | shipped | `pip install wellformed[xml]` |
 | JSON / JSON Schema   | planned | —                           |
 | YAML                 | planned | —                           |
 | Python AST           | planned | —                           |
 
 Writing a plugin is four methods: `_parse`, `_validate_schema`,
-`_get_document_type`, `_repair`. See `src/safewrite/xml/document.py`
+`_get_document_type`, `_repair`. See `src/wellformed/xml/document.py`
 for the reference implementation.
 
 ## License
