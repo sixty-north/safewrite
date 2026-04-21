@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # Extract Python versions from pyproject.toml classifiers so the test
+  # matrix stays in sync with the declared supported versions.
+  resolve-python-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.extract.outputs.versions }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: extract
+        run: |
+          versions=$(python -c "
+          import tomllib, json, pathlib
+          data = tomllib.loads(pathlib.Path('pyproject.toml').read_text())
+          vs = [
+              c.rsplit(' :: ', 1)[-1]
+              for c in data['project']['classifiers']
+              if c.startswith('Programming Language :: Python :: 3.')
+          ]
+          print(json.dumps(vs))
+          ")
+          echo "versions=$versions" >> "$GITHUB_OUTPUT"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync --group dev --extra xml
+      - run: uv run ruff check src/ tests/
+      - run: uv run ruff format --check src/ tests/
+
+  test:
+    needs: resolve-python-versions
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJson(needs.resolve-python-versions.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv python install ${{ matrix.python-version }}
+
+      - name: Build package
+        run: uv build
+
+      - name: Install wheel with xml extra and test dependencies
+        run: |
+          uv venv --python ${{ matrix.python-version }}
+          WHL=$(ls dist/*.whl)
+          uv pip install "${WHL}[xml]"
+          uv pip install pytest pytest-asyncio hypothesis
+
+      - name: Run tests against installed package
+        run: uv run pytest
+
+  # Verify the core (without the xml extra) has no hidden lxml
+  # dependency. Guards the plugin boundary: if a core module ever
+  # starts importing lxml at the top level, this job fails.
+  core-smoke:
+    needs: resolve-python-versions
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJson(needs.resolve-python-versions.outputs.versions) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv python install ${{ matrix.python-version }}
+
+      - name: Build package
+        run: uv build
+
+      - name: Install core only (no xml extra)
+        run: |
+          uv venv --python ${{ matrix.python-version }} .venv-core
+          source .venv-core/bin/activate
+          uv pip install dist/*.whl pytest pytest-asyncio hypothesis
+
+      - name: Verify core imports work without lxml
+        run: |
+          source .venv-core/bin/activate
+          python -c "from wellformed import ValidatedDocument, FixingLoop, Checkpoint, DocumentMutation"
+
+      - name: Verify wellformed.xml raises a helpful ImportError without lxml
+        run: |
+          source .venv-core/bin/activate
+          python - <<'PY'
+          try:
+              from wellformed.xml import XMLValidatedDocument  # noqa: F401
+          except ImportError as e:
+              assert "lxml" in str(e), f"unexpected message: {e}"
+              print(f"OK: {e}")
+          else:
+              raise SystemExit("expected ImportError when lxml is not installed")
+          PY
+
+      - name: Run non-xml tests without lxml
+        run: |
+          source .venv-core/bin/activate
+          pytest tests --ignore=tests/xml
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, test, core-smoke]
+    runs-on: ubuntu-latest
+    environment: pypi
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Build package
+        run: uv build
+
+      - name: Publish to PyPI
+        run: uv publish
+        env:
+          UV_PUBLISH_TOKEN: ${{ secrets.PYPI_TOKEN }}
