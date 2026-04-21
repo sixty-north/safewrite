@@ -85,9 +85,9 @@ def extract_line_column_from_message(error_message: str) -> tuple[int | None, in
     """Extract line and column numbers from a parser error message.
 
     Works out of the box for parsers that emit messages like
-    ``"..., line X, column Y"`` (lxml, json.JSONDecoder via str() wrapping,
-    yaml.YAMLError, and many others). Plugins can supply their own
-    extractor via the ``location_extractor`` parameter of
+    ``"..., line X, column Y"`` (lxml, json.JSONDecoder via str()
+    wrapping, and many others). Plugins can supply their own extractor
+    via the ``location_extractor`` parameter of
     :func:`format_validation_errors`.
     """
     line_match = re.search(r"line (\d+)", error_message, re.IGNORECASE)

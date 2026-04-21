@@ -14,8 +14,9 @@ structured documents reliably:
   granularity.
 
 The core is pure Python with zero runtime dependencies. Formats are
-added via plugins. XML and JSON ship today; YAML / AST are on the
-roadmap.
+added via plugins. XML and JSON ship today; the plugin API is public
+and compact, so adding a new format is a short afternoon's work — see
+[Writing a plugin](#writing-a-plugin) below.
 
 ## Installation
 
@@ -77,7 +78,7 @@ produces invalid content and the repair succeeds, the repaired content
 is written. If repair fails, `MutationFailedError` is raised and your
 code can roll back via the checkpoint.
 
-## The same, in JSON
+## The 30-second quickstart (JSON)
 
 The JSON plugin mirrors the XML one: same three hooks, same
 `load` / `apply` / `checkpoint` flow. JSON parsing uses the stdlib
@@ -509,12 +510,102 @@ Typical use cases:
 |----------------------|---------|--------------------------------|
 | XML (lxml)           | shipped | `pip install wellformed[xml]`  |
 | JSON / JSON Schema   | shipped | `pip install wellformed[json]` |
-| YAML                 | planned | —                              |
-| Python AST           | planned | —                              |
 
-Writing a plugin is four methods: `_parse`, `_validate_schema`,
-`_get_document_type`, `_repair`. See `src/wellformed/xml/document.py`
-or `src/wellformed/json/document.py` for reference implementations.
+## Writing a plugin
+
+A plugin teaches `wellformed` to interpret a new format. The contract is
+small: one base class, one exception, four methods. If your format has
+a parser and some notion of "valid" that can be expressed as a list of
+error strings, you can wrap it.
+
+Good candidates include structured text formats (YAML, TOML, INI,
+HCL), code representations (Python AST, tree-sitter syntax trees,
+S-expressions), and domain-specific markup (Markdown with a validator,
+protobuf text format, OpenAPI documents). The core machinery —
+validation, fixing loops, checkpoints — works identically for all of
+them.
+
+### The shape of a plugin
+
+A plugin is a single subdirectory under `wellformed/` with three files
+that mirror the shipped examples in
+[`src/wellformed/xml/`](src/wellformed/xml/) and
+[`src/wellformed/json/`](src/wellformed/json/):
+
+```
+wellformed/
+  yourformat/
+    __init__.py     # import guard + re-exports
+    document.py     # YourFormatValidatedDocument
+    exceptions.py   # YourFormatParseError
+    validators.py   # optional validator builders
+```
+
+### The four hooks
+
+Subclass `ValidatedDocument[ParsedT]`, pick a concrete `ParsedT` for
+your parsed representation (an AST node, a `dict`, a library object),
+and implement:
+
+- **`_parse(cls, content: str) -> ParsedT`** — parse text to the
+  in-memory form. Raise a subclass of `DocumentParseError` (so callers
+  can catch parse failures generically) with whatever location
+  information your parser gives you. Most parsers surface `line` and
+  `column`; pass them through.
+- **`_validate_schema(cls, content: str) -> list[str]`** — return a
+  list of schema-level error messages. Empty list means "valid". If
+  your format has no schema, return `[]` and the invariant narrows to
+  "well-formed" (see [Without a schema](#without-a-schema-well-formedness-alone)).
+- **`_get_document_type(cls) -> str`** — a short identifier, used in
+  log lines, error messages, and as a prompt label for LLM-backed
+  repair functions.
+- **`_repair(cls, content, errors, document_type) -> str`** — an
+  async callable that takes the current (invalid) content and the
+  errors from the last validation pass and returns repaired content.
+  Can be an LLM call, a deterministic rule, or a hybrid — see
+  [LLM-agnostic](#llm-agnostic-the-repair-function-is-a-protocol).
+
+### Validator builders are optional
+
+The XML and JSON plugins ship small factory functions
+(`make_xml_schema_validator`, `make_json_schema_validator`, etc.) that
+return a `ValidateFunction` bound to a schema file. These are
+convenience, not contract — if your format has one obvious schema
+dialect, ship one; if not, users can pass a callable directly. See
+[`xml/validators.py`](src/wellformed/xml/validators.py) and
+[`json/validators.py`](src/wellformed/json/validators.py).
+
+### Packaging
+
+Add your runtime dependencies as an optional extra in
+`pyproject.toml` so the core stays dependency-free:
+
+```toml
+[project.optional-dependencies]
+yourformat = ["your-parser>=1.0"]
+```
+
+Guard the import at the top of `wellformed/yourformat/__init__.py` so
+users who haven't installed the extra get a clear error:
+
+```python
+try:
+    import your_parser  # noqa: F401
+except ImportError as e:
+    raise ImportError(
+        "wellformed.yourformat requires your-parser. "
+        "Install with: pip install wellformed[yourformat]"
+    ) from e
+```
+
+### Tests
+
+Mirror [`tests/xml/`](tests/xml/) or [`tests/json/`](tests/json/):
+guard the whole module with `pytest.importorskip("your_parser")`, add
+a minimal `*ValidatedDocument` subclass as a fixture, and cover four
+behaviours — load success, parse failure raises your
+`*ParseError`, schema failure raises `SchemaValidationError`,
+mutations via `apply()` round-trip correctly.
 
 ## Releasing
 
