@@ -46,17 +46,13 @@ class TestSchemaValidatorComposition:
 class TestJSONSchemaValidator:
     def test_valid_content_passes(self, tmp_path):
         schema = tmp_path / "schema.json"
-        schema.write_text(
-            '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}'
-        )
+        schema.write_text('{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}')
         validator = make_json_schema_validator(schema)
         assert validator('{"name": "alice"}') == []
 
     def test_invalid_content_fails(self, tmp_path):
         schema = tmp_path / "schema.json"
-        schema.write_text(
-            '{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}'
-        )
+        schema.write_text('{"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}')
         validator = make_json_schema_validator(schema)
         errors = validator('{"other": 1}')
         assert errors
