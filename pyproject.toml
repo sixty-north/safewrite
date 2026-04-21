@@ -26,7 +26,7 @@ xml = ["lxml>=5.0"]
 
 [dependency-groups]
 test = ["pytest>=8", "pytest-asyncio>=0.24", "hypothesis>=6"]
-dev = ["ruff>=0.6", {include-group = "test"}]
+dev = ["ruff>=0.6", "bump-my-version>=1.0", {include-group = "test"}]
 
 [project.urls]
 Homepage = "https://github.com/sixty-north/wellformed"
@@ -43,3 +43,20 @@ minversion = "8.0"
 [tool.ruff]
 line-length = 120
 target-version = "py311"
+
+[tool.bumpversion]
+current_version = "0.1.0"
+commit = true
+tag = true
+tag_name = "v{new_version}"
+message = "Bump version: {current_version} -> {new_version}"
+tag_message = "Release {new_version}"
+allow_dirty = false
+
+# The [project] version line in this same file. Use an anchored regex
+# so we don't also match `current_version = "..."` in [tool.bumpversion].
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = '^version = "{current_version}"$'
+replace = 'version = "{new_version}"'
+regex = true

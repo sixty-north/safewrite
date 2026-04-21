@@ -400,6 +400,43 @@ Writing a plugin is four methods: `_parse`, `_validate_schema`,
 `_get_document_type`, `_repair`. See `src/wellformed/xml/document.py`
 for the reference implementation.
 
+## Releasing
+
+Versioning is managed with [bump-my-version](https://github.com/callowayproject/bump-my-version). It updates the version in `pyproject.toml`, commits the change, and creates a Git tag in one step.
+
+```bash
+# Install dev dependencies (includes bump-my-version)
+uv sync --group dev
+
+# Bump the patch version: 0.1.0 -> 0.1.1
+uv run bump-my-version bump patch
+
+# Bump the minor version: 0.1.1 -> 0.2.0
+uv run bump-my-version bump minor
+
+# Bump the major version: 0.2.0 -> 1.0.0
+uv run bump-my-version bump major
+```
+
+To preview what a bump would do without changing anything:
+
+```bash
+uv run bump-my-version bump patch --dry-run --verbose
+```
+
+After bumping, push the commit and tag together:
+
+```bash
+git push && git push --tags
+```
+
+To build and publish to PyPI:
+
+```bash
+uv build
+uv publish
+```
+
 ## License
 
 MIT.
