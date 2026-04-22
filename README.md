@@ -162,6 +162,75 @@ back on failure. Three granularities:
 - `MultiFileCheckpoint` — several files, restored in LIFO order.
 - `DirectoryCheckpoint` — whole directory copied via `shutil`.
 
+## Multi-file and directory checkpoints
+
+The quickstarts above use `Checkpoint` — single file, one document.
+Two related types cover the cases where one file is not enough.
+
+### `MultiFileCheckpoint` — several files, atomically
+
+When an agent edits two or more documents that must succeed together,
+bundle their checkpoints under a `MultiFileCheckpoint`. If any
+mutation in the group fails, `restore()` reverts every file whose
+checkpoint is still active — in LIFO order, so edits are undone in
+the reverse of the order they were applied.
+
+```python
+from wellformed import MultiFileCheckpoint
+
+note_a = await Note.load(Path("team-a.note.json"))
+note_b = await Note.load(Path("team-b.note.json"))
+
+multi = MultiFileCheckpoint()
+multi.add(note_a.checkpoint())
+multi.add(note_b.checkpoint())
+
+try:
+    new_a = await note_a.apply(AppendLine(name="append-a"))
+    new_a.save()
+    new_b = await note_b.apply(AppendLine(name="append-b"))
+    new_b.save()
+    multi.discard()
+except MutationFailedError:
+    multi.restore()
+    raise
+```
+
+If the second `apply()` fails, `multi.restore()` reverts
+`team-a.note.json` (already saved) and leaves `team-b.note.json`
+untouched (its checkpoint rewrites identical content). You never need
+to reason about which files made it to disk and which did not.
+
+### `DirectoryCheckpoint` — entire directory, including creates and deletes
+
+Per-file checkpoints cannot cover files that did not exist when the
+checkpoint was taken, or files the agent deletes. When an operation
+regenerates a directory — rewriting some files, removing others,
+adding new ones — snapshot the whole directory instead.
+`DirectoryCheckpoint.create` copies the directory via
+`shutil.copytree`; `restore()` removes the current directory and
+moves the backup back into place.
+
+```python
+from wellformed import DirectoryCheckpoint
+
+notes_dir = Path("notes/")
+checkpoint = DirectoryCheckpoint.create(notes_dir)
+
+try:
+    await regenerate_notes(notes_dir)  # may add, modify, or delete files
+    checkpoint.discard()                # on success: backup is removed
+except MutationFailedError:
+    checkpoint.restore()                # on failure: directory is restored
+    raise
+```
+
+The trade-off is disk cost: `copytree` duplicates the directory for
+the lifetime of the checkpoint, so this is best suited to
+small-to-moderate trees. For large repositories, prefer a
+`MultiFileCheckpoint` over the specific files you know you will
+touch.
+
 ## An extended example: iterative repair and rollback
 
 The quickstart is deliberately minimal. Here's a fuller example that
