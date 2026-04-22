@@ -28,6 +28,37 @@ pip install wellformed[json]        # with JSON plugin (installs jsonschema)
 
 Requires Python 3.11 or newer.
 
+## A note on async
+
+`wellformed` is async end-to-end. `load`, `load_with_repair`, `apply`,
+and `DocumentMutation.execute` are all coroutines, as is the `_repair`
+hook every consumer must implement. The reason is the expected shape
+of `_repair`: a call to an LLM SDK, which is async in every modern
+client. A sync repair hook would force LLM calls to block the event
+loop or run off-thread — neither acceptable in an agentic system
+dispatching such calls concurrently.
+
+This makes `wellformed` **a library for async codebases**.
+Applications already running under an async framework — FastAPI,
+LangGraph, LangChain's async runtime, Quart, AnyIO — can call it from
+any handler or node directly. A standalone script needs an explicit
+event loop:
+
+```python
+import asyncio
+
+async def main():
+    doc = await Note.load(Path("note.json"))
+    ...
+
+asyncio.run(main())
+```
+
+Integrating with a predominantly synchronous codebase is possible via
+`asyncio.run()` at the boundary, but any code path touching document
+mutations has to be async end-to-end itself — there is no sync
+wrapper around `apply()` or `_repair`.
+
 ## The 30-second quickstart (XML)
 
 ```python
